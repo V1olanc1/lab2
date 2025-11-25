@@ -4,6 +4,7 @@ import re
 from typing import List, Tuple, Optional
 
 import requests
+from bs4 import BeautifulSoup
 
 SNILS_SEARCH_RE = re.compile(
     r"""
@@ -42,19 +43,20 @@ def format_checksum_as_two_digits(checksum: int) -> str:
     return f"{checksum:02d}"
 
 
-def is_valid_snils(snils_digits: str) -> bool:
-    # snils_digits — только цифры, длиной 11
-    if len(snils_digits) != 11 or not snils_digits.isdigit():
+def is_valid_snils(snils_like: str) -> bool:
+    digits = normalize_digits(snils_like)
+
+    if len(digits) != 11:
         return False
 
-    body = snils_digits[:9]
-    checksum = int(snils_digits[9:])
+    body = digits[:9]
+    checksum = int(digits[9:])
 
     total = sum(int(body[i]) * (9 - i) for i in range(9))
 
     if total < 100:
         expected = total
-    elif total == 100 or total == 101:
+    elif total in (100, 101):
         expected = 0
     else:
         expected = total % 101
@@ -64,9 +66,10 @@ def is_valid_snils(snils_digits: str) -> bool:
     return checksum == expected
 
 
+
 def find_snils_in_text(text: str) -> List[Tuple[str, int, int]]:
-    """Ищет все потенциальные СНИЛС в переданном тексте и возвращает список кортежей:"""
-    results: List[Tuple[str, int, int]] = []
+    """Ищет СНИЛС по глобальной регулярке и проверяет каждый найденный на валидность."""
+    results = []
     for m in SNILS_SEARCH_RE.finditer(text):
         candidate = m.group(0)
         if is_valid_snils(candidate):
@@ -82,23 +85,16 @@ def find_snils_in_file(path: str, encoding: str = "utf-8") -> List[Tuple[str, in
 
 
 def find_snils_in_url(url: str):
-    pattern = re.compile(
-        r"\b\d{3}[- ]?\d{3}[- ]?\d{3}[- ]?\d{2}\b"
-    )
-
     response = requests.get(url, timeout=10)
     response.raise_for_status()
 
-    text = response.text
-    matches = pattern.findall(text)
+    soup = BeautifulSoup(response.text, "html.parser")
+    text = soup.get_text(separator=" ", strip=True)
 
-    result = []
-    for m in matches:
-        digits = re.sub(r"\D", "", m)
-        if is_valid_snils(digits):
-            result.append((m, digits))
+    found = find_snils_in_text(text)
 
-    return result
+    print(f"Найдено СНИЛС: {found}")
+    return [(item[0], normalize_digits(item[0])) for item in found]
 
 
 if __name__ == "__main__":
