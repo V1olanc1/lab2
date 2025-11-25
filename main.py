@@ -9,6 +9,7 @@ SNILS_SEARCH_RE = re.compile(
     r"\b\d{3}[-\s]?\d{3}[-\s]?\d{3}[-\s]?\d{2}\b"
 )
 
+
 def normalize_digits(snils_like: str) -> str:
     """Убирает из переданной строки всё, кроме цифр, и возвращает строку из цифр."""
     return re.sub(r"\D", "", snils_like)
@@ -17,8 +18,10 @@ def normalize_digits(snils_like: str) -> str:
 def compute_snils_checksum(nine_digits: str) -> int:
     """Вычисляет контрольное число (как целое 0..100) для первых 9 цифр."""
     if len(nine_digits) != 9 or not nine_digits.isdigit():
-        raise ValueError("Требуется строка ровно из 9 цифр для вычисления контрольной суммы.")
-    weights = list(range(9, 0, -1))  # [9,8,7,...,1]
+        raise ValueError(
+            "Требуется строка ровно из 9 цифр для вычисления контрольной суммы."
+        )
+    weights = list(range(9, 0, -1))  # [9, 8, 7, ..., 1]
     s = sum(int(d) * w for d, w in zip(nine_digits, weights))
     if s < 100:
         return s
@@ -57,34 +60,38 @@ def is_valid_snils(snils_like: str) -> bool:
     return checksum == expected
 
 
-
 def find_snils_in_text(text: str) -> List[Tuple[str, int, int]]:
-    """Ищет в тексте все подстроки, которые похожи на СНИЛС"""
+    """Ищет в тексте все подстроки, которые похожи на СНИЛС."""
     return [
         (m.group(0), m.start(), m.end())
         for m in SNILS_SEARCH_RE.finditer(text)
     ]
 
 
-def find_snils_in_file(path: str, encoding: str = "utf-8") -> List[Tuple[str, int, int]]:
+def find_snils_in_file(
+    path: str, encoding: str = "utf-8"
+) -> List[Tuple[str, int, int]]:
     """Читает файл по указанному пути и ищет в нём СНИЛС."""
     with open(path, "r", encoding=encoding, errors="ignore") as f:
         text = f.read()
     return find_snils_in_text(text)
 
 
-def find_snils_in_url(url: str):
+def find_snils_in_url(url: str) -> List[Tuple[str, int, int]]:
     response = requests.get(url, timeout=10)
     response.raise_for_status()
 
     text = response.text
-
     found = find_snils_in_text(text)
 
     return found
 
+
 if __name__ == "__main__":
-    print("Пример проверки СНИЛС. Введите СНИЛС (например, 112-233-445 95 или 11223344595):")
+    print(
+        "Пример проверки СНИЛС. Введите СНИЛС "
+        "(например, 112-233-445 95 или 11223344595):"
+    )
     s = input().strip()
     print("Введено:", s)
-    print("Валиден?" , is_valid_snils(s))
+    print("Валиден?", is_valid_snils(s))
