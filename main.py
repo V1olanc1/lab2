@@ -19,7 +19,7 @@ def compute_snils_checksum(nine_digits: str) -> int:
         raise ValueError(
             "Требуется строка ровно из 9 цифр для вычисления контрольной суммы."
         )
-    weights = list(range(9, 0, -1))  # [9, 8, 7, ..., 1]
+    weights = list(range(9, 0, -1))
     s = sum(int(d) * w for d, w in zip(nine_digits, weights))
     if s < 100:
         return s
