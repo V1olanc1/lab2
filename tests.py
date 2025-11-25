@@ -21,8 +21,6 @@ def test_normalize_digits_and_basic_valid():
 
 
 def test_compute_checksum_examples():
-    # Пример из официальных примеров:
-    # 112-233-445 -> сумма = 99, контрольное число = 95
     nine = "112233445"
     assert compute_snils_checksum(nine) == 95
 
