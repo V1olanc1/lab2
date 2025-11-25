@@ -70,6 +70,7 @@ def find_snils_in_file(path: str, encoding: str = "utf-8") -> List[Tuple[str, in
     """Читает файл по указанному пути и ищет в нём СНИЛС."""
     with open(path, "r", encoding=encoding, errors="ignore") as f:
         text = f.read()
+    return find_snils_in_text(text)
 
 
 def find_snils_in_url(url: str):
@@ -80,13 +81,7 @@ def find_snils_in_url(url: str):
 
     found = find_snils_in_text(text)
 
-    print(f"Найдено СНИЛС: {found}")
-
     return found
-
-
-
-
 
 if __name__ == "__main__":
     print("Пример проверки СНИЛС. Введите СНИЛС (например, 112-233-445 95 или 11223344595):")
