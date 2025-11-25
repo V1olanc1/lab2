@@ -1,22 +1,13 @@
 from __future__ import annotations
 
 import re
-from typing import List, Tuple, Optional
+from typing import List, Tuple
 
 import requests
-from bs4 import BeautifulSoup
 
 SNILS_SEARCH_RE = re.compile(
-    r"""
-    (?:
-        (?:\d{3}[-\s]?){2}\d{3}[-\s]?\d{2}   # формат с разделителями или без
-      |
-        \b\d{11}\b                           # 11 подряд цифр
-    )
-    """,
-    re.VERBOSE,
+    r"\b\d{3}[-\s]?\d{3}[-\s]?\d{3}[-\s]?\d{2}\b"
 )
-
 
 def normalize_digits(snils_like: str) -> str:
     """Убирает из переданной строки всё, кроме цифр, и возвращает строку из цифр."""
@@ -68,33 +59,33 @@ def is_valid_snils(snils_like: str) -> bool:
 
 
 def find_snils_in_text(text: str) -> List[Tuple[str, int, int]]:
-    """Ищет СНИЛС по глобальной регулярке и проверяет каждый найденный на валидность."""
-    results = []
-    for m in SNILS_SEARCH_RE.finditer(text):
-        candidate = m.group(0)
-        if is_valid_snils(candidate):
-            results.append((candidate, m.start(), m.end()))
-    return results
+    """Ищет в тексте все подстроки, которые похожи на СНИЛС"""
+    return [
+        (m.group(0), m.start(), m.end())
+        for m in SNILS_SEARCH_RE.finditer(text)
+    ]
 
 
 def find_snils_in_file(path: str, encoding: str = "utf-8") -> List[Tuple[str, int, int]]:
     """Читает файл по указанному пути и ищет в нём СНИЛС."""
     with open(path, "r", encoding=encoding, errors="ignore") as f:
         text = f.read()
-    return find_snils_in_text(text)
 
 
 def find_snils_in_url(url: str):
     response = requests.get(url, timeout=10)
     response.raise_for_status()
 
-    soup = BeautifulSoup(response.text, "html.parser")
-    text = soup.get_text(separator=" ", strip=True)
+    text = response.text
 
     found = find_snils_in_text(text)
 
     print(f"Найдено СНИЛС: {found}")
-    return [(item[0], normalize_digits(item[0])) for item in found]
+
+    return found
+
+
+
 
 
 if __name__ == "__main__":

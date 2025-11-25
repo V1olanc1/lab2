@@ -80,9 +80,7 @@ def test_find_snils_in_local_server():
 
     found_digits = {re.sub(r"\D", "", x[0]) for x in found}
 
-    # Проверяем что найдены все ожидаемые СНИЛС
     assert valid_expected.issubset(found_digits), f"Не найдены СНИЛС: {valid_expected - found_digits}"
 
-    # Должно быть минимум 3 валидных СНИЛС
     assert len(found_digits) >= 3, f"Найдено только {len(found_digits)} СНИЛС: {found_digits}"
 
