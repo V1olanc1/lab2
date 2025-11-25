@@ -38,6 +38,7 @@ def format_checksum_as_two_digits(checksum: int) -> str:
 
 
 def is_valid_snils(snils_like: str) -> bool:
+    """Проверяет правильный ли СНИЛС."""
     digits = normalize_digits(snils_like)
 
     if len(digits) != 11:
@@ -78,6 +79,7 @@ def find_snils_in_file(
 
 
 def find_snils_in_url(url: str) -> List[Tuple[str, int, int]]:
+    """Находит по URL СНИЛСы."""
     response = requests.get(url, timeout=10)
     response.raise_for_status()
 
