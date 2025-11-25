@@ -1,0 +1,83 @@
+import os
+import tempfile
+
+import pytest
+import re
+from main import (
+    normalize_digits,
+    compute_snils_checksum,
+    format_checksum_as_two_digits,
+    is_valid_snils,
+    find_snils_in_text,
+    find_snils_in_file,
+    find_snils_in_url,
+)
+
+
+def test_normalize_digits_and_basic_valid():
+    assert normalize_digits("112-233-445 95") == "11223344595"
+    assert is_valid_snils("112-233-445 95") is True
+    assert is_valid_snils("11223344595") is True
+
+
+def test_compute_checksum_examples_and_formatting():
+    cs = compute_snils_checksum("112233445")
+    assert cs == 95
+    assert format_checksum_as_two_digits(cs) == "95"
+
+    nine = "123456789"
+    cs2 = compute_snils_checksum(nine)
+    snils_full = nine + format_checksum_as_two_digits(cs2)
+    assert is_valid_snils(snils_full)
+
+
+def test_special_cases_checksum_100_101_and_mod():
+    nine = "999999999"
+    cs = compute_snils_checksum(nine)
+    sn = nine + format_checksum_as_two_digits(cs)
+    assert is_valid_snils(sn)
+
+    found_100 = None
+    found_101 = None
+    for i in range(100000000, 100000000 + 20000):
+        s = str(i)
+        try:
+            val = compute_snils_checksum(s)
+        except ValueError:
+            continue
+        if val == 0:
+            pass
+        sn_candidate = s + format_checksum_as_two_digits(val)
+        assert is_valid_snils(sn_candidate)
+        if i - 100000000 > 500:
+            break
+
+
+def test_find_snils_in_text_and_file(tmp_path):
+    text = "В тексте есть номер 112-233-445 95 и ещё какой-то текст и 12345678901."
+    found = find_snils_in_text(text)
+    assert any("112-233-445 95" in item[0] or "11223344595" in item[0] for item in found)
+
+    p = tmp_path / "f.txt"
+    p.write_text(text, encoding="utf-8")
+    found2 = find_snils_in_file(str(p))
+    assert len(found2) >= 1
+
+
+def test_find_snils_in_local_server():
+    url = "http://127.0.0.1:5000"
+
+    found = find_snils_in_url(url)
+
+    valid_expected = {
+        "11223344595",
+        "15678912307",
+        "23456789012"
+    }
+
+    found_digits = { re.sub(r"\D", "", x[0]) for x in found }
+
+    assert valid_expected.issubset(found_digits)
+
+    assert len(found_digits) == 3
+
