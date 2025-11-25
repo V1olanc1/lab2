@@ -1,133 +1,286 @@
 import re
 import requests
 from typing import List, Tuple, Optional
+import unittest
 from pathlib import Path
+from urllib.parse import urlparse
+import html
+import os
 
 
 class SNILSValidator:
-    """Класс для валидации и поиска СНИЛС в различных источниках."""
-    # Регулярное выражение для поиска СНИЛС
-    SNILS_PATTERN = re.compile(
-        r'\b(\d{3})-(\d{3})-(\d{3})\s*(\d{2})\b',
-        re.IGNORECASE
-    )
+    """Класс для проверки и поиска синтаксически корректных СНИЛС."""
 
-    # Регулярное выражение для строгой валидации (только корректные СНИЛС)
-    STRICT_SNILS_PATTERN = re.compile(
-        r'^\s*(\d{3})-(\d{3})-(\d{3})\s+(\d{2})\s*$',
-        re.IGNORECASE
+    # Регулярное выражение для поиска СНИЛС в тексте
+    SNILS_PATTERN = re.compile(
+        r'\b'  # Граница слова
+        r'(\d{3})'  # Первые 3 цифры (группа 1)
+        r'[-\s]?'  # Необязательный разделитель (- или пробел)
+        r'(\d{3})'  # Следующие 3 цифры (группа 2)
+        r'[-\s]?'  # Необязательный разделитель
+        r'(\d{3})'  # Последние 3 цифры основного номера (группа 3)
+        r'[-\s]?'  # Необязательный разделитель
+        r'(\d{2})'  # Контрольное число (группа 4)
+        r'\b'  # Граница слова
     )
 
     @staticmethod
-    def calculate_checksum(snils_number: str) -> str:
-        """Вычисляет контрольную сумму для СНИЛС."""
-        if len(snils_number) != 9 or not snils_number.isdigit():
-            raise ValueError("SNILS number must be exactly 9 digits")
+    def validate_checksum(snils: str) -> bool:
+        """Проверка контрольной суммы СНИЛС."""
+        if not snils.isdigit() or len(snils) != 11:
+            return False
 
+        number_part = snils[:9]  # Основная часть (9 цифр)
+        checksum = int(snils[9:])  # Контрольное число
+
+        # Вычисление контрольной суммы
         total = 0
-        for i, digit in enumerate(snils_number):
-            total += int(digit) * (9 - i)
+        for i, digit in enumerate(number_part, start=1):
+            total += int(digit) * (10 - i)
 
+        # Проверка контрольной суммы
         if total < 100:
-            return f"{total:02d}"
+            return checksum == total
         elif total == 100 or total == 101:
-            return "00"
+            return checksum == 0
         else:
             remainder = total % 101
             if remainder == 100:
-                return "00"
+                return checksum == 0
             else:
-                return f"{remainder:02d}"
+                return checksum == remainder
 
-    @staticmethod
-    def validate_snils(snils: str) -> bool:
-        """Проверяет корректность СНИЛС включая контрольную сумму."""
-        match = SNILSValidator.STRICT_SNILS_PATTERN.match(snils)
-        if not match:
-            return False
+    def extract_snils_from_text(self, text: str, validate_checksum: bool = True) -> List[Tuple[str, str]]:
+        """Извлечение СНИЛС из текста."""
+        results = []
 
-        number_part = ''.join(match.groups()[:3])
-        checksum = match.group(4)
+        for match in self.SNILS_PATTERN.finditer(text):
+            group1, group2, group3, checksum = match.groups()
+            normalized = f"{group1}{group2}{group3}{checksum}"
 
+            if not validate_checksum or self.validate_checksum(normalized):
+                formatted = f"{group1}-{group2}-{group3} {checksum}"
+                results.append((match.group(), formatted))
+
+        return results
+
+    def get_snils_from_user_input(self) -> Optional[str]:
+        """Получение и валидация СНИЛС от пользователя."""
+        user_input = input("Введите СНИЛС: ").strip()
+        matches = self.extract_snils_from_text(user_input, validate_checksum=True)
+
+        if matches:
+            _, normalized = matches[0]
+            print(f"Корректный СНИЛС: {normalized}")
+            return normalized.replace('-', '').replace(' ', '')
+        else:
+            print("СНИЛС не найден или невалиден")
+            return None
+
+    def get_snils_from_url(self, url: str, timeout: int = 10) -> List[Tuple[str, str]]:
+        """Поиск СНИЛС на веб-странице."""
         try:
-            calculated_checksum = SNILSValidator.calculate_checksum(number_part)
-            return checksum == calculated_checksum
-        except ValueError:
-            return False
+            parsed_url = urlparse(url)
+            if not parsed_url.scheme:
+                url = 'http://' + url
 
-    @staticmethod
-    def extract_snils_from_text(text: str, validate_checksum: bool = True) -> List[str]:
-        """Извлекает СНИЛС из текста."""
-        matches = SNILSValidator.SNILS_PATTERN.findall(text)
-        result = []
-
-        for match in matches:
-            number_part = ''.join(match[:3])
-            checksum = match[3]
-            snils_str = f"{match[0]}-{match[1]}-{match[2]} {checksum}"
-
-            if validate_checksum:
-                try:
-                    calculated_checksum = SNILSValidator.calculate_checksum(number_part)
-                    if checksum == calculated_checksum:
-                        result.append(snils_str)
-                except ValueError:
-                    continue
-            else:
-                result.append(snils_str)
-
-        return result
-
-    @staticmethod
-    def find_snils_in_file(file_path: str, validate_checksum: bool = True) -> List[str]:
-        """Ищет СНИЛС в файле."""
-        path = Path(file_path)
-        if not path.exists():
-            raise FileNotFoundError(f"File {file_path} not found")
-
-        try:
-            with open(file_path, 'r', encoding='utf-8') as file:
-                content = file.read()
-                return SNILSValidator.extract_snils_from_text(content, validate_checksum)
-        except UnicodeDecodeError:
-            for encoding in ['cp1251', 'iso-8859-1', 'windows-1251']:
-                try:
-                    with open(file_path, 'r', encoding=encoding) as file:
-                        content = file.read()
-                        return SNILSValidator.extract_snils_from_text(content, validate_checksum)
-                except UnicodeDecodeError:
-                    continue
-            raise ValueError(f"Не удалось расшифровать файл {file_path} в какой-либо поддерживаемой кодировке")
-
-    @staticmethod
-    def find_snils_on_webpage(url: str, validate_checksum: bool = True) -> List[str]:
-        """Ищет СНИЛС на веб-странице."""
-        try:
-            response = requests.get(url, timeout=10)
+            print(f"🔍 Загрузка страницы: {url}")
+            response = requests.get(
+                url,
+                timeout=timeout,
+                headers={
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                }
+            )
             response.raise_for_status()
-            return SNILSValidator.extract_snils_from_text(response.text, validate_checksum)
+
+            print(f"Страница загружена успешно (статус: {response.status_code})")
+
+            text = self._extract_text_from_html(response.text)
+            print(f"Извлечено текста: {len(text)} символов")
+
+            results = self.extract_snils_from_text(text, validate_checksum=True)
+            print(f"Найдено СНИЛС: {len(results)}")
+
+            return results
+
+        except requests.exceptions.ConnectionError:
+            print(f"Ошибка подключения к {url}. Сервер не доступен.")
+            return []
+        except requests.exceptions.Timeout:
+            print(f"Таймаут при подключении к {url}")
+            return []
+        except requests.exceptions.HTTPError as e:
+            print(f"HTTP ошибка: {e}")
+            return []
         except requests.RequestException as e:
-            raise ConnectionError(f"Не удалось получить доступ к веб-странице: {e}")
+            print(f"Ошибка при загрузке страницы: {e}")
+            return []
+        except Exception as e:
+            print(f"Неожиданная ошибка: {e}")
+            return []
 
-    @staticmethod
-    def get_user_input() -> List[str]:
-        """Получает СНИЛС от пользователя через консольный ввод."""
-        print("Введите СНИЛС в формате XXX-XXX-XXX YY (пустая строка для завершения):")
-        snils_list = []
+    def _extract_text_from_html(self, html_content: str) -> str:
+        """Базовое извлечение текста из HTML."""
+        text = re.sub(r'<[^>]+>', ' ', html_content)
+        text = html.unescape(text)
+        text = ' '.join(text.split())
+        return text
 
-        while True:
-            try:
-                user_input = input("СНИЛС: ").strip()
-                if not user_input:
-                    break
+    def get_snils_from_file(self, file_path: str) -> List[Tuple[str, str]]:
+        """Поиск СНИЛС в файле."""
+        try:
+            path = Path(file_path)
 
-                if SNILSValidator.validate_snils(user_input):
-                    snils_list.append(user_input)
-                    print("Корректный СНИЛС")
-                else:
-                    print("Некорректный СНИЛС")
-            except KeyboardInterrupt:
-                print("\nВвод прерван")
-                break
+            if path.suffix.lower() == '.txt':
+                with open(file_path, 'r', encoding='utf-8') as file:
+                    content = file.read()
+                return self.extract_snils_from_text(content)
+            else:
+                print(f"Формат {path.suffix} не поддерживается")
+                return []
 
-        return snils_list
+        except FileNotFoundError:
+            print(f"Файл {file_path} не найден")
+            return []
+        except Exception as e:
+            print(f"Ошибка при чтении файла: {e}")
+            return []
+
+
+class TestSNILSValidator(unittest.TestCase):
+    """Тесты для валидатора СНИЛС."""
+
+    def setUp(self):
+        self.validator = SNILSValidator()
+
+    def test_valid_snils_formats(self):
+        test_cases = [
+            ("123-456-789 00", "12345678900"),
+            ("12345678900", "12345678900"),
+            ("123-456-78900", "12345678900"),
+            ("123 456 789 00", "12345678900"),
+        ]
+
+        for input_text, expected in test_cases:
+            with self.subTest(input_text=input_text):
+                result = self.validator.extract_snils_from_text(input_text, validate_checksum=False)
+                self.assertEqual(len(result), 1)
+                _, formatted = result[0]
+                normalized = formatted.replace('-', '').replace(' ', '')
+                self.assertEqual(normalized, expected)
+
+    def test_invalid_snils_formats(self):
+        invalid_cases = [
+            "123-45-678 90",
+            "12-345-678 90",
+            "abc-def-ghi jk",
+            "123-456-789",
+            "123-456-789 0",
+        ]
+
+        for invalid_case in invalid_cases:
+            with self.subTest(invalid_case=invalid_case):
+                result = self.validator.extract_snils_from_text(invalid_case)
+                self.assertEqual(len(result), 0)
+
+    def test_checksum_validation(self):
+        valid_snils = ["112-233-445 95", "156-789-123 07"]
+        invalid_snils = ["112-233-445 00", "156-789-123 99"]
+
+        for snils in valid_snils:
+            with self.subTest(valid_snils=snils):
+                result = self.validator.extract_snils_from_text(snils, validate_checksum=True)
+                self.assertEqual(len(result), 1)
+
+        for snils in invalid_snils:
+            with self.subTest(invalid_snils=snils):
+                result = self.validator.extract_snils_from_text(snils, validate_checksum=True)
+                self.assertEqual(len(result), 0)
+
+    def test_url_parsing(self):
+        with unittest.mock.patch('requests.get') as mock_get:
+            mock_response = unittest.mock.Mock()
+            mock_response.text = """
+            <html>
+                <body>
+                    <p>СНИЛС: 112-233-445 95</p>
+                    <p>Другой СНИЛС: 156-789-123 07</p>
+                </body>
+            </html>
+            """
+            mock_response.raise_for_status.return_value = None
+            mock_get.return_value = mock_response
+
+            results = self.validator.get_snils_from_url("http://127.0.0.1:5000")
+            self.assertEqual(len(results), 2)
+
+
+def demonstrate_localhost_usage():
+    print("\n" + "=" * 70)
+    print("ДЕМОНСТРАЦИЯ РАБОТЫ С ЛОКАЛЬНЫМ СЕРВЕРОМ http://127.0.0.1:5000")
+    print("=" * 70)
+
+    validator = SNILSValidator()
+    local_url = "http://127.0.0.1:5000"
+
+    print(f"\nТестирование на локальном сервере: {local_url}")
+
+    try:
+        results = validator.get_snils_from_url(local_url, timeout=5)
+
+        if results:
+            print(f"\nНа локальном сервере найдено СНИЛС: {len(results)}")
+            print("\nНайденные СНИЛС:")
+            for i, (original, formatted) in enumerate(results, 1):
+                print(f"   {i}. {formatted}")
+        else:
+            print("\nНа локальном сервере СНИЛС не найдены")
+
+    except Exception as e:
+        print(f"\n💥 Ошибка при работе с локальным сервером: {e}")
+
+
+def run_complete_demonstration():
+    """Полная демонстрация работы системы."""
+    validator = SNILSValidator()
+
+    print("=== ПОЛНАЯ ДЕМОНСТРАЦИЯ СИСТЕМЫ ПОИСКА СНИЛС ===\n")
+
+    # 1. Демонстрация с текстом
+    print("1.ПОИСК В ТЕКСТЕ:")
+    sample_text = """
+    Отчет по сотрудникам:
+    - Иванов И.И.: СНИЛС 112-233-445 95
+    - Петров П.П.: СНИЛС 156-789-123 07  
+    - Невалидный: 123-456-789 00
+    """
+    results = validator.extract_snils_from_text(sample_text)
+    print(f"   Найдено: {len(results)} СНИЛС\n")
+
+    # 2. Демонстрация с локальным сервером
+    print("2.ПОИСК НА ЛОКАЛЬНОМ СЕРВЕРЕ:")
+    demonstrate_localhost_usage()
+
+    # 3. Демонстрация с файлом
+    print("\n3.ПОИСК В ФАЙЛЕ:")
+    with open('test_demo.txt', 'w', encoding='utf-8') as f:
+        f.write("Файл с СНИЛС: 112-233-445 95 и 156-789-123 07")
+
+    file_results = validator.get_snils_from_file('test_demo.txt')
+    print(f"   Найдено в файле: {len(file_results)} СНИЛС")
+
+    # Очистка
+    if os.path.exists('test_demo.txt'):
+        os.remove('test_demo.txt')
+
+
+if __name__ == "__main__":
+    run_complete_demonstration()
+
+    print("\n" + "=" * 70)
+    print("ЗАПУСК UNIT-ТЕСТОВ")
+    print("=" * 70)
+
+    # Запуск unit-тестов
+    unittest.main(argv=[''], verbosity=2, exit=False)
