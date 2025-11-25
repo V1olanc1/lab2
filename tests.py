@@ -1,8 +1,5 @@
-import os
-import tempfile
-
 import pytest
-import re
+import re, requests
 from main import (
     normalize_digits,
     compute_snils_checksum,
